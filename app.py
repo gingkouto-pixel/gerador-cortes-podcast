@@ -21,7 +21,9 @@ def baixar_video_por_link(url):
     ydl_opts = {
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'outtmpl': 'video_baixado.mp4',
-        'quiet': True
+        'quiet': True,
+        'no_warnings': True,
+        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
@@ -32,17 +34,11 @@ if st.button("🚀 Processar e Gerar Cortes"):
         st.error("Por favor, insira sua Chave da OpenAI.")
         st.stop()
     if not url_video:
-        st.error("Por favor, cole o link do vídeo.")
+        st.error("Por favor, insira o link do vídeo do YouTube.")
         st.stop()
-
-    client = OpenAI(api_key=api_key_input)
     
     try:
-        video_path = baixar_video_por_link(url_video)
-        st.success("✅ Vídeo baixado! O sistema está pronto para fatiar em blocos de 1m15s.")
-        
-        # Aviso visual do fluxo completo
-        st.info("O pipeline de IA, transcrição e cortes via FFmpeg está configurado e pronto para processar seu vídeo!")
-        
+        arquivo_video = baixar_video_por_link(url_video)
+        st.success("Download concluído com sucesso!")
     except Exception as e:
         st.error(f"Ocorreu um erro no processamento: {e}")
