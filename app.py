@@ -5,10 +5,10 @@ import yt_dlp
 from openai import OpenAI
 import json
 
-st.set_page_config(page_title="Gerador de Cortes Virais", layout="centered")
+st.set_page_config(page_title="Gerador de Cortes Virais Pro", layout="centered")
 
-st.title("🎬 Gerador de Cortes para Podcasts (1m15s)")
-st.write("Insira o link do podcast (YouTube) e receba os clipes com títulos, legendas e hashtags virais para o TikTok/Reels!")
+st.title("🎬 Gerador de Cortes Virais com Retenção Máxima")
+st.write("Baixa do YouTube, corta em formato vertical (9:16), gera legendas dinâmicas e entrega títulos e hashtags virais!")
 
 # Configura a chave da OpenAI direto na tela
 api_key_input = st.text_input("Cole sua Chave da OpenAI (API Key):", type="password")
@@ -43,56 +43,99 @@ def transcrever_audio(client, audio_path):
             model="whisper-1",
             file=audio_file,
             response_format="verbose_json",
-            timestamp_granularities=["segment"]
+            timestamp_granularities=["word"]
         )
     return transcript
 
-def identificar_cortes(client, transcricao, instrucao):
-    st.info("🧠 Analisando os melhores momentos, legendas e hashtags com GPT...")
+def identificar_cortes(client, transcricao_texto, instrucao):
+    st.info("🧠 Analisando os melhores momentos com GPT...")
     prompt = f"""
-    Você é um especialista em crescimento e estratégia de conteúdo viral (TikTok, Instagram Reels, YouTube Shorts).
-    Análise a transcrição do podcast abaixo e selecione os melhores momentos (entre 60 e 75 segundos cada).
-    Instrução adicional do usuário: {instrucao}
+    Você é um especialista em retenção e vídeos virais (TikTok, Reels, Shorts).
+    Analise a transcrição abaixo e selecione os melhores momentos (entre 60 e 75 segundos cada).
+    Instrução do usuário: {instrucao}
 
-    Transcrição com marcas de tempo:
-    {transcricao}
+    Transcrição:
+    {transcricao_texto}
 
-    Para cada corte encontrado, crie também:
-    1. 'titulo': Um título chamativo com gancho viral.
-    2. 'legenda': Uma bio/legenda curta, persuasiva e com chamada para ação (CTA) para o post.
-    3. 'hashtags': Uma lista com 5 a 10 hashtags virais e muito relevantes ao tema.
+    Para cada corte, crie:
+    1. 'inicio': tempo de início em segundos (número).
+    2. 'fim': tempo de fim em segundos (número).
+    3. 'titulo': Título magnético e chamativo.
+    4. 'legenda': Legenda persuasiva com chamada para ação (CTA).
+    5. 'hashtags': Hashtags virais.
 
-    Retorne ESTRITAMENTE um JSON válido no seguinte formato:
+    Retorne ESTRITAMENTE um JSON válido no formato de lista:
     [
         {{
             "inicio": 120.5,
             "fim": 195.0,
-            "titulo": "🔥 ELE REVELOU O SEGREDO DOS MILIONÁRIOS!",
-            "legenda": "Concordas com esta opinião sobre negócios? Comenta aqui embaixo a tua opinião e segue o perfil para mais cortes diários! 👇",
-            "hashtags": "#podcast #cortes #negocios #sucesso #viral #empreendedorismo"
+            "titulo": "🔥 O SEGREDOS DOS MILIONÁRIOS",
+            "legenda": "Concordas? Comenta aqui embaixo! 👇",
+            "hashtags": "#podcast #cortes #viral"
         }}
     ]
-    Importante: 'inicio' e 'fim' devem ser em segundos (números). Não inclua nenhum outro texto fora do JSON.
+    Não inclua nenhum texto fora do JSON.
     """
-    
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3
     )
-    
     conteudo = response.choices[0].message.content.strip()
     if conteudo.startswith("```json"):
         conteudo = conteudo.replace("```json", "").replace("```", "").strip()
-    
     return json.loads(conteudo)
 
-def cortar_video(video_path, inicio, fim, output_path):
-    duracao = fim - inicio
-    cmd = f"ffmpeg -y -ss {inicio} -i {video_path} -t {duracao} -c:v libx264 -c:a aac {output_path}"
-    subprocess.run(cmd, shell=True, check=True)
+def formatar_tempo_srt(segundos):
+    horas = int(segundos // 3600)
+    minutos = int((segundos % 3600) // 60)
+    segs = int(segundos % 60)
+    milisegs = int((segundos - int(segundos)) * 1000)
+    return f"{horas:02d}:{minutos:02d}:{segs:02d},{milisegs:03d}"
 
-if st.button("🚀 Processar e Gerar Cortes"):
+def criar_legendas_srt(palavras, inicio_corte, fim_corte, srt_path):
+    # Filtra palavras do intervalo do corte e reajusta o tempo relativas ao início do corte
+    palavras_corte = [p for p in palavras if p['start'] >= inicio_corte and p['end'] <= fim_corte]
+    
+    with open(srt_path, "w", encoding="utf-8") as f:
+        # Agrupa de 3 em 3 palavras para uma leitura dinâmica ideal na tela
+        grupo_tamanho = 3
+        for i in range(0, len(palavras_corte), grupo_tamanho):
+            bloco = palavras_corte[i:i+grupo_tamanho]
+            if not bloco:
+                continue
+            t_ini = bloco[0]['start'] - inicio_corte
+            t_fim = bloco[-1]['end'] - inicio_corte
+            if t_ini < 0: t_ini = 0
+            
+            texto_bloco = " ".join([p['word'] for p in bloco]).upper()
+            
+            f.write(f"{i//grupo_tamanho + 1}\n")
+            f.write(f"{formatar_tempo_srt(t_ini)} --> {formatar_tempo_srt(t_fim)}\n")
+            f.write(f"{texto_bloco}\n\n")
+
+def processar_video_efeitos(video_path, inicio, fim, srt_path, output_path):
+    duracao = fim - inicio
+    # Filtro FFmpeg avançado: 
+    # 1. Corta o trecho (-ss e -t)
+    # 2. Converte para formato vertical 9:16 (crop inteligente centralizado) com redimensionamento para 1080x1920
+    # 3. Queima as legendas dinâmicas estilizadas no centro do ecrã com destaque
+    filtro_video = "crop=ih*9/16:ih,scale=1080:1920,subtitles=" + srt_path + ":force_style='FontSize=24,PrimaryColour=&H00FFFF&,OutlineColour=&H000000&,BackColour=&H80000000&,BorderStyle=3,Outline=2,Shadow=1,Alignment=2'"
+    
+    cmd = [
+        "ffmpeg", "-y",
+        "-ss", str(inicio),
+        "-i", video_path,
+        "-t", str(duracao),
+        "-vf", filtro_video,
+        "-c:v", "libx264",
+        "-preset", "fast",
+        "-c:a", "aac",
+        output_path
+    ]
+    subprocess.run(cmd, check=True)
+
+if st.button("🚀 Processar e Gerar Cortes Virais"):
     if not api_key_input:
         st.error("Por favor, insira sua Chave da OpenAI.")
         st.stop()
@@ -109,40 +152,40 @@ if st.button("🚀 Processar e Gerar Cortes"):
         # 2. Extrai Áudio
         arquivo_audio = extrair_audio(arquivo_video)
         
-        # 3. Transcreve Áudio
+        # 3. Transcreve Áudio com marcas por palavra
         transcricao = transcrever_audio(client, arquivo_audio)
         
-        # Prepara segmentos de texto com timestamps
-        texto_com_tempo = ""
-        for seg in transcricao.segments:
-            texto_com_tempo += f"[{seg['start']:.1f}s -> {seg['end']:.1f}s] {seg['text']}\n"
-            
-        # 4. Identifica os Melhores Momentos + Legendas + Hashtags
-        cortes = identificar_cortes(client, texto_com_tempo, instrucao_usuario)
+        # Prepara texto corrido para o GPT analisar
+        texto_transcrito = " ".join([p['word'] for p in transcricao.words])
+        
+        # 4. Identifica cortes
+        cortes = identificar_cortes(client, texto_transcrito, instrucao_usuario)
         
         st.success(f"🎉 Foram identificados {len(cortes)} cortes virais!")
         
-        # 5. Gera os Arquivos e Exibe as Informações Virais
+        # 5. Processamento final (Vertical 9:16 + Legendas Dinâmicas)
         for i, corte in enumerate(cortes):
             st.markdown("---")
             st.subheader(f"Corte {i+1}: {corte['titulo']}")
             
-            output_corte = f"corte_{i+1}.mp4"
+            srt_path = f"legenda_{i+1}.srt"
+            output_corte = f"corte_viral_{i+1}.mp4"
             
-            with st.spinner(f"Gerando vídeo do Corte {i+1}..."):
-                cortar_video(arquivo_video, corte['inicio'], corte['fim'], output_corte)
+            criar_legendas_srt(transcricao.words, corte['inicio'], corte['fim'], srt_path)
+            
+            with st.spinner(f"Renderizando efeitos e formato vertical no Corte {i+1}..."):
+                processar_video_efeitos(arquivo_video, corte['inicio'], corte['fim'], srt_path, output_corte)
                 
             st.video(output_corte)
             
-            # Exibe Legenda e Hashtags prontas para copiar
             st.text_area(f"📝 Legenda / Bio sugerida (Corte {i+1}):", corte['legenda'], height=100)
             st.text_input(f"🏷️ Hashtags sugeridas (Corte {i+1}):", corte['hashtags'])
             
             with open(output_corte, "rb") as file:
                 st.download_button(
-                    label=f"⬇️ Baixar Vídeo {i+1}",
+                    label=f"⬇️ Baixar Vídeo Viral {i+1}",
                     data=file,
-                    file_name=f"corte_{i+1}.mp4",
+                    file_name=f"corte_viral_{i+1}.mp4",
                     mime="video/mp4"
                 )
                 
