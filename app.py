@@ -9,12 +9,8 @@ st.set_page_config(page_title="Gerador de Cortes Virais Pro (Ultra Retention)", 
 st.title("⚡ Gerador de Cortes Virais Pro (Upload Direto)")
 st.write("Carregue o ficheiro de vídeo do seu podcast e receba os cortes verticais (9:16) com legendas dinâmicas estilo Hormozi e hashtags virais!")
 
-# Configuração da API Key
 api_key_input = st.text_input("Cole sua Chave da OpenAI (API Key):", type="password")
-
-# Upload direto do ficheiro de vídeo
 uploaded_file = st.file_uploader("Escolha ou arraste o ficheiro de vídeo do podcast (.mp4, .mov, .mkv):", type=["mp4", "mov", "mkv"])
-
 instrucao_usuario = st.text_area("Instruções adicionais para a IA:", "Foque nos momentos mais impactantes, polêmicos, inspiradores ou engraçados.")
 
 def extrair_audio(video_path):
@@ -149,5 +145,46 @@ if st.button("🚀 Gerar Cortes de Alta Retenção"):
     try:
         client = OpenAI(api_key=api_key_input)
         
-        # Salva o vídeo enviado no servidor
-        arquivo_
+        arquivo_video = "video_carregado.mp4"
+        with open(arquivo_video, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        st.success("Ficheiro de vídeo recebido com sucesso!")
+        
+        arquivo_audio = extrair_audio(arquivo_video)
+        transcricao = transcrever_audio(client, arquivo_audio)
+        
+        texto_marcado = ""
+        for seg in transcricao.words:
+            texto_marcado += f"[{seg['start']:.1f}s] {seg['word']} "
+            
+        cortes = identificar_cortes_inteligentes(client, texto_marcado, instrucao_usuario)
+        
+        st.success(f"🎉 Encontrados {len(cortes)} momentos virais de altíssima retenção!")
+        
+        for i, corte in enumerate(cortes):
+            st.markdown("---")
+            st.subheader(f"Corte {i+1}: {corte['titulo']}")
+            
+            ass_path = f"legenda_{i+1}.ass"
+            output_corte = f"corte_pro_{i+1}.mp4"
+            
+            criar_legenda_ass_estilizada(transcricao.words, corte['inicio'], corte['fim'], ass_path)
+            
+            with st.spinner(f"Renderizando edição profissional do Corte {i+1}..."):
+                processar_video_ultra_retencao(arquivo_video, corte['inicio'], corte['fim'], ass_path, output_corte)
+                
+            st.video(output_corte)
+            
+            st.text_area(f"📝 Legenda / Bio sugerida (Corte {i+1}):", corte['legenda'], height=90)
+            st.text_input(f"🏷️ Hashtags (Corte {i+1}):", corte['hashtags'])
+            
+            with open(output_corte, "rb") as file:
+                st.download_button(
+                    label=f"⬇️ Baixar Vídeo Viral Pro {i+1}",
+                    data=file,
+                    file_name=f"corte_pro_{i+1}.mp4",
+                    mime="video/mp4"
+                )
+                
+    except Exception as e:
+        st.error(f"Ocorreu um erro no processamento: {e}")
