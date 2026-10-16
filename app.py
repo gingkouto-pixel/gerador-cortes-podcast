@@ -1,36 +1,21 @@
 import streamlit as st
 import os
 import subprocess
-import yt_dlp
 from openai import OpenAI
 import json
 
 st.set_page_config(page_title="Gerador de Cortes Virais Pro (Ultra Retention)", layout="centered")
 
-st.title("⚡ Gerador de Cortes Virais Pro (Ultra Retenção)")
-st.write("Análise inteligente por ganchos, legendas animadas estilo Hormozi, enquadramento 9:16 e normalização de áudio!")
+st.title("⚡ Gerador de Cortes Virais Pro (Upload Direto)")
+st.write("Carregue o ficheiro de vídeo do seu podcast e receba os cortes verticais (9:16) com legendas dinâmicas estilo Hormozi e hashtags virais!")
 
+# Configuração da API Key
 api_key_input = st.text_input("Cole sua Chave da OpenAI (API Key):", type="password")
-url_video = st.text_input("Cole o link do YouTube do podcast:")
-instrucao_usuario = st.text_area("Instruções adicionais para a IA:", "Foque nos momentos mais impactantes, polêmicos, inspiradores ou engraçados.")
 
-def baixar_video_por_link(url):
-    st.info("⬇️ Baixando o vídeo/áudio do link com modo seguro anti-bloqueio...")
-    ydl_opts = {
-        'format': 'best',
-        'outtmpl': 'video_baixado.mp4',
-        'quiet': True,
-        'no_warnings': True,
-        'nocheckcertificate': True,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android']
-            }
-        }
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
-    return "video_baixado.mp4"
+# Upload direto do ficheiro de vídeo
+uploaded_file = st.file_uploader("Escolha ou arraste o ficheiro de vídeo do podcast (.mp4, .mov, .mkv):", type=["mp4", "mov", "mkv"])
+
+instrucao_usuario = st.text_area("Instruções adicionais para a IA:", "Foque nos momentos mais impactantes, polêmicos, inspiradores ou engraçados.")
 
 def extrair_audio(video_path):
     st.info("🎧 Extraindo e preparando áudio...")
@@ -154,49 +139,15 @@ def processar_video_ultra_retencao(video_path, inicio, fim, ass_path, output_pat
     subprocess.run(cmd, check=True)
 
 if st.button("🚀 Gerar Cortes de Alta Retenção"):
-    if not api_key_input or not url_video:
-        st.error("Preencha a Chave da OpenAI e o Link do YouTube.")
+    if not api_key_input:
+        st.error("Por favor, insira sua Chave da OpenAI.")
+        st.stop()
+    if uploaded_file is None:
+        st.error("Por favor, selecione ou faça upload de um ficheiro de vídeo.")
         st.stop()
         
     try:
         client = OpenAI(api_key=api_key_input)
         
-        arquivo_video = baixar_video_por_link(url_video)
-        arquivo_audio = extrair_audio(arquivo_video)
-        transcricao = transcrever_audio(client, arquivo_audio)
-        
-        texto_marcado = ""
-        for seg in transcricao.words:
-            texto_marcado += f"[{seg['start']:.1f}s] {seg['word']} "
-            
-        cortes = identificar_cortes_inteligentes(client, texto_marcado, instrucao_usuario)
-        
-        st.success(f"🎉 Encontrados {len(cortes)} momentos virais de altíssima retenção!")
-        
-        for i, corte in enumerate(cortes):
-            st.markdown("---")
-            st.subheader(f"Corte {i+1}: {corte['titulo']}")
-            
-            ass_path = f"legenda_{i+1}.ass"
-            output_corte = f"corte_pro_{i+1}.mp4"
-            
-            criar_legenda_ass_estilizada(transcricao.words, corte['inicio'], corte['fim'], ass_path)
-            
-            with st.spinner(f"Renderizando edição profissional do Corte {i+1}..."):
-                processar_video_ultra_retencao(arquivo_video, corte['inicio'], corte['fim'], ass_path, output_corte)
-                
-            st.video(output_corte)
-            
-            st.text_area(f"📝 Legenda / Bio sugerida (Corte {i+1}):", corte['legenda'], height=90)
-            st.text_input(f"🏷️ Hashtags (Corte {i+1}):", corte['hashtags'])
-            
-            with open(output_corte, "rb") as file:
-                st.download_button(
-                    label=f"⬇️ Baixar Vídeo Viral Pro {i+1}",
-                    data=file,
-                    file_name=f"corte_pro_{i+1}.mp4",
-                    mime="video/mp4"
-                )
-                
-    except Exception as e:
-        st.error(f"Ocorreu um erro no processamento: {e}")
+        # Salva o vídeo enviado no servidor
+        arquivo_
