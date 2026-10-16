@@ -15,21 +15,17 @@ url_video = st.text_input("Cole o link do YouTube do podcast:")
 instrucao_usuario = st.text_area("Instruções adicionais para a IA:", "Foque nos momentos mais impactantes, polêmicos, inspiradores ou engraçados.")
 
 def baixar_video_por_link(url):
-    st.info("⬇️ Baixando o vídeo/áudio do link com alta qualidade...")
+    st.info("⬇️ Baixando o vídeo/áudio do link com modo seguro anti-bloqueio...")
     ydl_opts = {
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'format': 'best',
         'outtmpl': 'video_baixado.mp4',
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
         'extractor_args': {
             'youtube': {
-                'player_client': ['ios', 'android', 'web'],
-                'player_skip': ['webpage', 'configs']
+                'player_client': ['android']
             }
-        },
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
         }
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
