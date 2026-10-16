@@ -8,7 +8,7 @@ import json
 st.set_page_config(page_title="Gerador de Cortes Virais", layout="centered")
 
 st.title("🎬 Gerador de Cortes para Podcasts (1m15s)")
-st.write("Insira o link do podcast (YouTube) e receba os clipes prontos para o TikTok!")
+st.write("Insira o link do podcast (YouTube) e receba os clipes com títulos, legendas e hashtags virais para o TikTok/Reels!")
 
 # Configura a chave da OpenAI direto na tela
 api_key_input = st.text_input("Cole sua Chave da OpenAI (API Key):", type="password")
@@ -48,19 +48,29 @@ def transcrever_audio(client, audio_path):
     return transcript
 
 def identificar_cortes(client, transcricao, instrucao):
-    st.info("🧠 Analisando os melhores momentos com GPT...")
+    st.info("🧠 Analisando os melhores momentos, legendas e hashtags com GPT...")
     prompt = f"""
-    Você é um editor especialista em vídeos virais (TikTok, Reels, Shorts).
+    Você é um especialista em crescimento e estratégia de conteúdo viral (TikTok, Instagram Reels, YouTube Shorts).
     Análise a transcrição do podcast abaixo e selecione os melhores momentos (entre 60 e 75 segundos cada).
     Instrução adicional do usuário: {instrucao}
 
     Transcrição com marcas de tempo:
     {transcricao}
 
+    Para cada corte encontrado, crie também:
+    1. 'titulo': Um título chamativo com gancho viral.
+    2. 'legenda': Uma bio/legenda curta, persuasiva e com chamada para ação (CTA) para o post.
+    3. 'hashtags': Uma lista com 5 a 10 hashtags virais e muito relevantes ao tema.
+
     Retorne ESTRITAMENTE um JSON válido no seguinte formato:
     [
-        {{"inicio": 120.5, "fim": 195.0, "titulo": "Momento Polêmico sobre Negócios"}},
-        {{"inicio": 450.0, "fim": 525.0, "titulo": "História Engraçada de Infância"}}
+        {{
+            "inicio": 120.5,
+            "fim": 195.0,
+            "titulo": "🔥 ELE REVELOU O SEGREDO DOS MILIONÁRIOS!",
+            "legenda": "Concordas com esta opinião sobre negócios? Comenta aqui embaixo a tua opinião e segue o perfil para mais cortes diários! 👇",
+            "hashtags": "#podcast #cortes #negocios #sucesso #viral #empreendedorismo"
+        }}
     ]
     Importante: 'inicio' e 'fim' devem ser em segundos (números). Não inclua nenhum outro texto fora do JSON.
     """
@@ -107,23 +117,30 @@ if st.button("🚀 Processar e Gerar Cortes"):
         for seg in transcricao.segments:
             texto_com_tempo += f"[{seg['start']:.1f}s -> {seg['end']:.1f}s] {seg['text']}\n"
             
-        # 4. Identifica os Melhores Momentos
+        # 4. Identifica os Melhores Momentos + Legendas + Hashtags
         cortes = identificar_cortes(client, texto_com_tempo, instrucao_usuario)
         
         st.success(f"🎉 Foram identificados {len(cortes)} cortes virais!")
         
-        # 5. Gera os Arquivos de Vídeo Cortados
+        # 5. Gera os Arquivos e Exibe as Informações Virais
         for i, corte in enumerate(cortes):
+            st.markdown("---")
             st.subheader(f"Corte {i+1}: {corte['titulo']}")
+            
             output_corte = f"corte_{i+1}.mp4"
             
-            with st.spinner(f"Gerando arquivo de vídeo {i+1}..."):
+            with st.spinner(f"Gerando vídeo do Corte {i+1}..."):
                 cortar_video(arquivo_video, corte['inicio'], corte['fim'], output_corte)
                 
             st.video(output_corte)
+            
+            # Exibe Legenda e Hashtags prontas para copiar
+            st.text_area(f"📝 Legenda / Bio sugerida (Corte {i+1}):", corte['legenda'], height=100)
+            st.text_input(f"🏷️ Hashtags sugeridas (Corte {i+1}):", corte['hashtags'])
+            
             with open(output_corte, "rb") as file:
                 st.download_button(
-                    label=f"⬇️ Baixar Corte {i+1}",
+                    label=f"⬇️ Baixar Vídeo {i+1}",
                     data=file,
                     file_name=f"corte_{i+1}.mp4",
                     mime="video/mp4"
