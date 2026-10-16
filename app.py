@@ -4,17 +4,15 @@ import subprocess
 import yt_dlp
 from openai import OpenAI
 import json
+import math
 
 st.set_page_config(page_title="Gerador de Cortes Virais Pro", layout="centered")
 
-st.title("🎬 Gerador de Cortes Virais com Retenção Máxima")
-st.write("Baixa do YouTube, corta em formato vertical (9:16), gera legendas dinâmicas e entrega títulos e hashtags virais!")
+st.title("🎬 Divisor Completo de Podcast (1m15s por Parte)")
+st.write("Divide o vídeo INTEIRO de ponta a ponta em blocos sequenciais de 1m15s com formato vertical (9:16), legendas dinâmicas e hashtags!")
 
-# Configura a chave da OpenAI direto na tela
 api_key_input = st.text_input("Cole sua Chave da OpenAI (API Key):", type="password")
-
 url_video = st.text_input("Cole o link do YouTube do podcast:")
-instrucao_usuario = st.text_area("O que deseja nos cortes?", "Encontre os momentos mais chamativos, polêmicos ou engraçados.")
 
 def baixar_video_por_link(url):
     st.info("⬇️ Baixando o vídeo/áudio do link...")
@@ -26,8 +24,9 @@ def baixar_video_por_link(url):
         'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
-    return "video_baixado.mp4"
+        info = ydl.extract_info(url, download=True)
+        duracao_total = info.get('duration', 0)
+    return "video_baixado.mp4", duracao_total
 
 def extrair_audio(video_path):
     st.info("🎧 Extraindo áudio do vídeo...")
@@ -47,44 +46,36 @@ def transcrever_audio(client, audio_path):
         )
     return transcript
 
-def identificar_cortes(client, transcricao_texto, instrucao):
-    st.info("🧠 Analisando os melhores momentos com GPT...")
+def gerar_info_corte(client, texto_trecho, numero_parte):
     prompt = f"""
-    Você é um especialista em retenção e vídeos virais (TikTok, Reels, Shorts).
-    Analise a transcrição abaixo e selecione os melhores momentos (entre 60 e 75 segundos cada).
-    Instrução do usuário: {instrucao}
-
-    Transcrição:
-    {transcricao_texto}
-
-    Para cada corte, crie:
-    1. 'inicio': tempo de início em segundos (número).
-    2. 'fim': tempo de fim em segundos (número).
-    3. 'titulo': Título magnético e chamativo.
-    4. 'legenda': Legenda persuasiva com chamada para ação (CTA).
-    5. 'hashtags': Hashtags virais.
-
-    Retorne ESTRITAMENTE um JSON válido no formato de lista:
-    [
-        {{
-            "inicio": 120.5,
-            "fim": 195.0,
-            "titulo": "🔥 O SEGREDOS DOS MILIONÁRIOS",
-            "legenda": "Concordas? Comenta aqui embaixo! 👇",
-            "hashtags": "#podcast #cortes #viral"
-        }}
-    ]
-    Não inclua nenhum texto fora do JSON.
+    Crie uma legenda persuasiva e hashtags virais para a PARTE {numero_parte} deste podcast.
+    
+    Trecho falado:
+    "{texto_trecho}"
+    
+    Retorne ESTRITAMENTE um JSON no formato:
+    {{
+        "titulo": "🔥 PARTE {numero_parte}: [Título chamativo resumindo o trecho]",
+        "legenda": "Confira a Parte {numero_parte} do podcast! Curta e siga para a próxima parte! 👇",
+        "hashtags": "#podcast #parte{numero_parte} #cortes #viral"
+    }}
     """
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.3
-    )
-    conteudo = response.choices[0].message.content.strip()
-    if conteudo.startswith("```json"):
-        conteudo = conteudo.replace("```json", "").replace("```", "").strip()
-    return json.loads(conteudo)
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3
+        )
+        conteudo = response.choices[0].message.content.strip()
+        if conteudo.startswith("```json"):
+            conteudo = conteudo.replace("```json", "").replace("```", "").strip()
+        return json.loads(conteudo)
+    except:
+        return {
+            "titulo": f"🔥 PARTE {numero_parte} DO PODCAST",
+            "legenda": f"Assista à Parte {numero_parte}! Curta e siga para ver o restante!",
+            "hashtags": "#podcast #cortes #viral"
+        }
 
 def formatar_tempo_srt(segundos):
     horas = int(segundos // 3600)
@@ -94,11 +85,8 @@ def formatar_tempo_srt(segundos):
     return f"{horas:02d}:{minutos:02d}:{segs:02d},{milisegs:03d}"
 
 def criar_legendas_srt(palavras, inicio_corte, fim_corte, srt_path):
-    # Filtra palavras do intervalo do corte e reajusta o tempo relativas ao início do corte
     palavras_corte = [p for p in palavras if p['start'] >= inicio_corte and p['end'] <= fim_corte]
-    
     with open(srt_path, "w", encoding="utf-8") as f:
-        # Agrupa de 3 em 3 palavras para uma leitura dinâmica ideal na tela
         grupo_tamanho = 3
         for i in range(0, len(palavras_corte), grupo_tamanho):
             bloco = palavras_corte[i:i+grupo_tamanho]
@@ -107,21 +95,13 @@ def criar_legendas_srt(palavras, inicio_corte, fim_corte, srt_path):
             t_ini = bloco[0]['start'] - inicio_corte
             t_fim = bloco[-1]['end'] - inicio_corte
             if t_ini < 0: t_ini = 0
-            
             texto_bloco = " ".join([p['word'] for p in bloco]).upper()
-            
             f.write(f"{i//grupo_tamanho + 1}\n")
             f.write(f"{formatar_tempo_srt(t_ini)} --> {formatar_tempo_srt(t_fim)}\n")
             f.write(f"{texto_bloco}\n\n")
 
-def processar_video_efeitos(video_path, inicio, fim, srt_path, output_path):
-    duracao = fim - inicio
-    # Filtro FFmpeg avançado: 
-    # 1. Corta o trecho (-ss e -t)
-    # 2. Converte para formato vertical 9:16 (crop inteligente centralizado) com redimensionamento para 1080x1920
-    # 3. Queima as legendas dinâmicas estilizadas no centro do ecrã com destaque
-    filtro_video = "crop=ih*9/16:ih,scale=1080:1920,subtitles=" + srt_path + ":force_style='FontSize=24,PrimaryColour=&H00FFFF&,OutlineColour=&H000000&,BackColour=&H80000000&,BorderStyle=3,Outline=2,Shadow=1,Alignment=2'"
-    
+def processar_video_efeitos(video_path, inicio, duracao, srt_path, output_path):
+    filtro_video = "crop=ih*9/16:ih,scale=1080:1920,subtitles=" + srt_path + ":force_style='FontSize=24,PrimaryColour=&H00FFFF&,OutlineColour=&H000000&,BorderStyle=3,Alignment=2'"
     cmd = [
         "ffmpeg", "-y",
         "-ss", str(inicio),
@@ -135,59 +115,62 @@ def processar_video_efeitos(video_path, inicio, fim, srt_path, output_path):
     ]
     subprocess.run(cmd, check=True)
 
-if st.button("🚀 Processar e Gerar Cortes Virais"):
-    if not api_key_input:
-        st.error("Por favor, insira sua Chave da OpenAI.")
-        st.stop()
-    if not url_video:
-        st.error("Por favor, insira o link do vídeo do YouTube.")
+if st.button("🚀 Dividir Vídeo Inteiro"):
+    if not api_key_input or not url_video:
+        st.error("Preencha a Chave da OpenAI e o Link do YouTube.")
         st.stop()
     
     try:
         client = OpenAI(api_key=api_key_input)
         
         # 1. Download
-        arquivo_video = baixar_video_por_link(url_video)
+        arquivo_video, duracao_total = baixar_video_por_link(url_video)
         
-        # 2. Extrai Áudio
+        # 2. Extrai Áudio e Transcreve
         arquivo_audio = extrair_audio(arquivo_video)
-        
-        # 3. Transcreve Áudio com marcas por palavra
         transcricao = transcrever_audio(client, arquivo_audio)
         
-        # Prepara texto corrido para o GPT analisar
-        texto_transcrito = " ".join([p['word'] for p in transcricao.words])
+        # 3. Calcula quantidade de blocos de 75s (1m15s)
+        tamanho_bloco = 75.0
+        total_partes = math.ceil(duracao_total / tamanho_bloco)
         
-        # 4. Identifica cortes
-        cortes = identificar_cortes(client, texto_transcrito, instrucao_usuario)
+        st.success(f"🎉 O vídeo possui {duracao_total:.0f}s e será dividido em {total_partes} partes de 1m15s sem perder nada!")
         
-        st.success(f"🎉 Foram identificados {len(cortes)} cortes virais!")
-        
-        # 5. Processamento final (Vertical 9:16 + Legendas Dinâmicas)
-        for i, corte in enumerate(cortes):
+        # 4. Gera cada parte sequencialmente
+        for parte in range(1, total_partes + 1):
+            inicio = (parte - 1) * tamanho_bloco
+            fim = min(parte * tamanho_bloco, duracao_total)
+            duracao_atual = fim - inicio
+            
             st.markdown("---")
-            st.subheader(f"Corte {i+1}: {corte['titulo']}")
             
-            srt_path = f"legenda_{i+1}.srt"
-            output_corte = f"corte_viral_{i+1}.mp4"
+            # Texto falado neste bloco para a IA resumir
+            palavras_bloco = [p['word'] for p in transcricao.words if inicio <= p['start'] <= fim]
+            texto_bloco = " ".join(palavras_bloco)
             
-            criar_legendas_srt(transcricao.words, corte['inicio'], corte['fim'], srt_path)
+            # Gera info viral (Título da Parte X, Legenda, Hashtags)
+            info = gerar_info_corte(client, texto_bloco, parte)
+            st.subheader(info['titulo'])
             
-            with st.spinner(f"Renderizando efeitos e formato vertical no Corte {i+1}..."):
-                processar_video_efeitos(arquivo_video, corte['inicio'], corte['fim'], srt_path, output_corte)
+            srt_path = f"legenda_{parte}.srt"
+            output_corte = f"parte_{parte}.mp4"
+            
+            criar_legendas_srt(transcricao.words, inicio, fim, srt_path)
+            
+            with st.spinner(f"Processando e renderizando Parte {parte} de {total_partes}..."):
+                processar_video_efeitos(arquivo_video, inicio, duracao_atual, srt_path, output_corte)
                 
             st.video(output_corte)
-            
-            st.text_area(f"📝 Legenda / Bio sugerida (Corte {i+1}):", corte['legenda'], height=100)
-            st.text_input(f"🏷️ Hashtags sugeridas (Corte {i+1}):", corte['hashtags'])
+            st.text_area(f"📝 Legenda / Bio (Parte {parte}):", info['legenda'], height=80)
+            st.text_input(f"🏷️ Hashtags (Parte {parte}):", info['hashtags'])
             
             with open(output_corte, "rb") as file:
                 st.download_button(
-                    label=f"⬇️ Baixar Vídeo Viral {i+1}",
+                    label=f"⬇️ Baixar Parte {parte}",
                     data=file,
-                    file_name=f"corte_viral_{i+1}.mp4",
+                    file_name=f"parte_{parte}.mp4",
                     mime="video/mp4"
                 )
                 
     except Exception as e:
-        st.error(f"Ocorreu um erro no processamento: {e}")
+        st.error(f"Ocorreu um erro: {e}")
